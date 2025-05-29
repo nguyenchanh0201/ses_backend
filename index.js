@@ -1,13 +1,28 @@
+const port = require('./src/configs/index').port
+const db = require('./src/configs/db').pool
+
 const express = require('express');
-const dotenv = require('dotenv');
 
-
-dotenv.config();
 const app = express();
-const PORT = process.env.PORT || 3000;
 
+//Middlewares
 app.use(express.json());
 
+
+//Database
+const connectDB = async () => {
+    const client = await db.connect();
+    const result = await client.query('SELECT version()');
+    client.release();
+
+    const { version } = result.rows[0];
+    console.log(`Database connected : ${version}`)
+}
+
+
+
+
+//Main route
 app.get('/', (req, res) => {
     res.send('Hello World!');
 });
@@ -16,6 +31,8 @@ app.get('/', (req, res) => {
 
 
 
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+app.listen(port, () => {
+    connectDB();
+    console.log(`Server is running on http://localhost:${port}`);
 });
+
