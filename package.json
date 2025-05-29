@@ -21,9 +21,11 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.2",
     "multer-s3": "^3.0.1",
-    "mysql2": "^3.14.1",
-    "nodemon": "^3.1.10",
+    "pg": "^8.16.0",
     "sequelize": "^6.37.7",
     "twilio": "^5.6.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
   }
 }
