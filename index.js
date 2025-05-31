@@ -1,5 +1,8 @@
-const port = require('./src/configs/index').port
-const db = require('./src/configs/db').pool
+const port = require('./src/config/index').port
+const db = require('./src/config/db').pool
+const morgan = require('morgan')
+const helmet = require('helmet')
+const cors = require('cors')
 
 const express = require('express');
 
@@ -7,6 +10,9 @@ const app = express();
 
 //Middlewares
 app.use(express.json());
+app.use(morgan('dev'))
+app.use(helmet())
+app.use(cors())
 
 
 //Database
