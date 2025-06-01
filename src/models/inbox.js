@@ -40,7 +40,7 @@ Inbox.init({
     allowNull: true,
   },
   body: {
-    type: DataTypes.TEXT,
+    type: DataTypes.JSONB,
     allowNull: true,
   },
   subject: {
