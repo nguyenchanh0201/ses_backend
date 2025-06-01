@@ -1,25 +1,33 @@
 'use strict';
-const {
-  Model
-} = require('sequelize');
+const { Model } = require('sequelize');
+
 module.exports = (sequelize, DataTypes) => {
   class UserLabel extends Model {
-    /**
-     * Helper method for defining associations.
-     * This method is not a part of Sequelize lifecycle.
-     * The `models/index` file will call this method automatically.
-     */
     static associate(models) {
-      // define association here
+      // UserLabel thuộc về 1 User
+      UserLabel.belongsTo(models.User, { foreignKey: 'userId' });
     }
   }
   UserLabel.init({
-    id: DataTypes.UUID,
-    userId: DataTypes.UUID,
-    labelName: DataTypes.STRING
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+      allowNull: false,
+    },
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+    },
+    labelName: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
   }, {
     sequelize,
     modelName: 'UserLabel',
+    tableName: 'UserLabels',
+    timestamps: true,
   });
   return UserLabel;
 };
