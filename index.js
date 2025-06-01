@@ -6,6 +6,8 @@ const cors = require('cors')
 
 const express = require('express');
 
+const routes = require('./src/routes/index')
+
 const app = express();
 
 //Middlewares
@@ -15,10 +17,10 @@ app.use(helmet())
 app.use(cors())
 
 
-//Main route
-app.get('/', (req, res) => {
-    res.send('Hello World!');
-});
+
+
+//Use routes
+app.use('/api', routes);
 
 
 //Listen

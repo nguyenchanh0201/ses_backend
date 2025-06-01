@@ -6,6 +6,15 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       // UserLabel thuộc về 1 User
       UserLabel.belongsTo(models.User, { foreignKey: 'userId' });
+
+
+
+      UserLabel.belongsToMany(models.Inbox, {
+        through: models.InboxLabel,
+        foreignKey: 'labelId',
+        as: 'inboxes',
+      });
+
     }
   }
   UserLabel.init({
