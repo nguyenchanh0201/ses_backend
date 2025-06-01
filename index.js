@@ -15,30 +15,14 @@ app.use(helmet())
 app.use(cors())
 
 
-//Database
-const connectDB = async () => {
-    const client = await db.connect();
-    const result = await client.query('SELECT version()');
-    client.release();
-
-    const { version } = result.rows[0];
-    console.log(`Database connected : ${version}`)
-}
-
-
-
-
 //Main route
 app.get('/', (req, res) => {
     res.send('Hello World!');
 });
 
 
-
-
-
+//Listen
 app.listen(port, () => {
-    connectDB();
     console.log(`Server is running on http://localhost:${port}`);
 });
 
