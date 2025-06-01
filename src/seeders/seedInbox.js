@@ -4,7 +4,7 @@ const db = require('../models'); // Đường dẫn đến thư mục models, đ
 
 async function seedInbox() {
   try {
-    
+
     const user1 = await db.User.findOne({ where: { username: 'userone' } });
     const user2 = await db.User.findOne({ where: { username: 'usertwo' } });
 
@@ -18,7 +18,11 @@ async function seedInbox() {
       from: user1.id,
       to: user2.id,
       subject: 'Hello User Two',
-      body: 'This is the first message.',
+      body: {
+        "ops": [
+          { "insert": "This is the first message.\n" }
+        ]
+      },
       attachments: [
         { fileName: 'file1.pdf', url: 'http://example.com/file1.pdf' }
       ]
@@ -30,7 +34,12 @@ async function seedInbox() {
       to: user1.id,
       parentInboxId: inbox1.id,
       subject: 'Re: Hello User Two',
-      body: 'Thanks for your message.',
+      body: 
+      {
+        "ops": [
+          { "insert": "Thanks for your message.\n" }
+        ]
+      },
       attachments: []
     });
 
@@ -39,7 +48,11 @@ async function seedInbox() {
       from: user2.id,
       to: user1.id,
       subject: 'Another message',
-      body: 'This is another message without reply.',
+      body: {
+        "ops": [
+          { "insert": "This is another message without reply.\n" }
+        ]
+      },
       attachments: null  // hoặc [], tùy bạn muốn mặc định
     });
 
