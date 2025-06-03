@@ -7,9 +7,10 @@ async function seedInbox() {
 
     const user1 = await db.User.findOne({ where: { username: 'userone' } });
     const user2 = await db.User.findOne({ where: { username: 'usertwo' } });
-
-    if (!user1 || !user2) {
-      throw new Error('User1 hoặc User2 không tồn tại trong database');
+    const user3 = await db.User.findOne({ where: { username: 'userthree' } });
+    const user4 = await db.User.findOne({ where: { username: 'userfour' } });
+    if (!user1 || !user2 || !user3 || !user4  ) {
+      throw new Error('Các user không tồn tại trong database');
     }
 
 
@@ -56,6 +57,31 @@ async function seedInbox() {
       attachments: null  // hoặc [], tùy bạn muốn mặc định
     });
 
+
+    const inbox3 = await db.Inbox.create({
+      from: user3.id,
+      to: user1.id,
+      subject: 'Another message',
+      body: {
+        "ops": [
+          { "insert": "This is another message without reply.\n" }
+        ]
+      },
+      attachments: null  // hoặc [], tùy bạn muốn mặc định
+    });
+
+
+    const inbox4 = await db.Inbox.create({
+      from: user4.id,
+      to: user3.id,
+      subject: 'Another message',
+      body: {
+        "ops": [
+          { "insert": "This is another message without reply.\n" }
+        ]
+      },
+      attachments: null  // hoặc [], tùy bạn muốn mặc định
+    });
     console.log('Seeding inbox data completed successfully.');
 
   } catch (error) {

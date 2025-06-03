@@ -34,7 +34,39 @@ async function seedUsers() {
       }
     });
 
-    console.log('Users seeded:', user1.username, user2.username);
+
+    const [user3, created3] = await db.User.findOrCreate({
+      where: { username: 'userthree' },
+      defaults: {
+        name: 'User Three',
+        phoneNumber: '0933467119',
+        password: 'password3',
+        username: 'userthree',
+        gender: 'male',
+        dOfB: new Date('1992-02-01'),
+        isVerified: false,
+        imageUrl: 'https://example.com/avatar3.png',
+        isAutoReply: false,
+      }
+    });
+
+    const [user4, created4] = await db.User.findOrCreate({
+      where: { username: 'userfour' },
+      defaults: {
+        name: 'User Four',
+        phoneNumber: '0933467118',
+        password: 'password3',
+        username: 'userfour',
+        gender: 'male',
+        dOfB: new Date('1992-02-01'),
+        isVerified: false,
+        imageUrl: 'https://example.com/avatar4.png',
+        isAutoReply: false,
+      }
+    });
+
+
+    console.log('Users seeded:', user1.username, user2.username, user3.username, user4.username);
   } catch (error) {
     console.error('Error seeding users:', error);
   } finally {

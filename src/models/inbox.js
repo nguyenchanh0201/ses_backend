@@ -11,7 +11,7 @@ module.exports = (sequelize, DataTypes) => {
       Inbox.hasMany(models.Inbox, { as: 'Replies', foreignKey: 'parentInboxId' });
 
 
-      Inbox.hasMany(models.InboxUserStatus, { foreignKey: 'inboxId' });
+      Inbox.hasMany(models.InboxUserStatus, { foreignKey: 'inboxId', as: 'status' });
 
       Inbox.belongsToMany(models.UserLabel, {
         through: models.InboxLabel,  // The junction table (InboxLabels)
