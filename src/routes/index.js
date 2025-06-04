@@ -4,7 +4,7 @@ const userRoutes = require('./userRoutes');
 const labelRoutes = require('./labelRoutes');
 
 router.use(inboxRoutes);  
-// router.use(userRoutes);   
+router.use(userRoutes);   
 router.use(labelRoutes);
 
 module.exports = router;
