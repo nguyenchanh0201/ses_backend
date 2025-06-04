@@ -86,7 +86,7 @@ const AuthController = {
                 name: name,
                 phoneNumber: phoneNumber,
                 password: pwdHashed,
-                otpCode,
+                otpNumber: otpCode,
                 dOfB: new Date(dOfB)
                 // dùng để xác nhận sau khi verify OTP
             });
@@ -113,35 +113,38 @@ const AuthController = {
 
 
     async checkOTP(req, res) {
-
         try {
             const { otp, phoneNumber } = req.body;
 
-            const user = db.User.findOne({
-                where: { phoneNumber: phoneNumber }
-            })
+            // Tìm người dùng trong cơ sở dữ liệu
+            const user = await db.User.findOne({ where: { phoneNumber: phoneNumber } });
 
+            // Kiểm tra xem người dùng có tồn tại hay không
             if (!user) {
-                res.status(400).json({ message: "User not found" })
-
+                return res.status(404).json({ message: "User not found" });
             }
 
-            if (!user.otpNumber === otp) {
-                res.status(400).json({ message: "Invalid otp" })
+            // Kiểm tra OTP
+            if (user.otpNumber !== otp) {
+                return res.status(400).json({ message: "Invalid OTP" });
             }
 
-            user.otpNumber = null;
-            user.isVerified = true;
+            // Cập nhật trạng thái người dùng sau khi xác thực OTP
+            user.otpNumber = null;  // Xóa mã OTP sau khi xác thực
+            user.isVerified = true;  // Đánh dấu người dùng đã xác thực
 
+            // Lưu lại thay đổi vào cơ sở dữ liệu
+            await user.save();
 
-            res.status(200).json({ message: "Verified OTP success" })
+            // Trả về phản hồi thành công
+            return res.status(200).json({ message: "OTP verified successfully" });
 
         } catch (err) {
             console.log(err);
-            res.status(500).json({ message: 'Error verify OTP' });
+            return res.status(500).json({ message: 'Error verifying OTP' });
         }
-
     },
+
 
 
     async forgotPassword(req, res) {
