@@ -2,7 +2,6 @@ const db = require('../models');
 const sendSMS = require('../utils/sendSMS');
 const generateCode = require('../utils/generateCode');
 const { hashPwd } = require('../utils/hashPassword');
-const { response } = require('express');
 const comparePassword = require('../utils/comparePassword');
 const generateToken = require('../utils/jwt');
 
@@ -43,6 +42,8 @@ const AuthController = {
                 if (!smsResult) {
                     return res.status(500).json({ message: 'Unable to send OTP, please try again' });
                 }
+
+
 
                 // Bạn có thể lưu OTP trong cơ sở dữ liệu hoặc bộ nhớ tạm
                 // Đảm bảo rằng OTP sẽ hết hạn sau một khoảng thời gian nhất định (ví dụ 5 phút)
@@ -147,17 +148,53 @@ const AuthController = {
 
 
 
-    async forgotPassword(req, res) {
+    async requestforgotPassword(req, res) {
+        //Gửi request quên mật khẩu
+
+        try {
+            const { phoneNumber } = req.body;
+
+            const user = await db.User.findOne({
+                where: { phoneNumber: phoneNumber }
+            })
+
+            if (!user) {
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            //Tìm được
+            user.isVerified = false;
+
+            //Generate OTP code 
+            user.otpNumber = generateCode(6);
+
+            const status = await user.save();
+
+            if (!status) {
+                return res.status(500).json({ message: "Error saving user" })
+            }
+
+            // const smsResult = await sendSMS({
+            //     phoneNumber,
+            //     message: `Here is your OTP for reset password: ${otpCode}`,
+            // });
+
+            // if (!smsResult) {
+            //     return res.status(500).json({ message: 'Không thể gửi OTP, vui lòng thử lại' });
+            // }
+
+            return res.status(200).json({message : "Sent reset OTP success"})
+
+        } catch (err) {
+            console.log(err);
+            return res.status(500).json({ message: "Error request forgoting password" });
+        }
+        
+
+
+
 
     },
-
-
-    async getProfile(req, res) {
-
-    }
-
-
-
 
 };
 
