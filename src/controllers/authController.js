@@ -1,0 +1,163 @@
+const db = require('../models');
+const sendSMS = require('../utils/sendSMS');
+const generateCode = require('../utils/generateCode');
+const { hashPwd } = require('../utils/hashPassword');
+const { response } = require('express');
+const comparePassword = require('../utils/comparePassword');
+const generateToken = require('../utils/jwt');
+
+const AuthController = {
+
+
+    async signIn(req, res) {
+        try {
+            const { phoneNumber, password } = req.body;
+
+            // Tìm người dùng trong cơ sở dữ liệu
+            const existingUser = await db.User.findOne({ where: { phoneNumber: phoneNumber } });
+            if (!existingUser) {
+                return res.status(400).json({ message: 'User does not exist' });
+            }
+
+            // Kiểm tra người dùng đã được xác thực hay chưa
+            if (!existingUser.isVerified) {
+                return res.status(400).json({ message: 'User not verified yet' });
+            }
+
+            // Kiểm tra mật khẩu
+            const isMatch = await comparePassword(password, existingUser.password);
+            if (!isMatch) {
+                return res.status(400).json({ message: 'Invalid credentials' });
+            }
+
+            // Xử lý OTP nếu 2FA được bật
+            if (existingUser.is2FA) {
+                const otpCode = generateCode(6);  // Tạo mã OTP 6 chữ số
+
+                // Gửi OTP qua SMS
+                const smsResult = await sendSMS({
+                    phoneNumber: existingUser.phoneNumber,
+                    message: `Here is your OTP for login: ${otpCode}`,
+                });
+
+                if (!smsResult) {
+                    return res.status(500).json({ message: 'Unable to send OTP, please try again' });
+                }
+
+                // Bạn có thể lưu OTP trong cơ sở dữ liệu hoặc bộ nhớ tạm
+                // Đảm bảo rằng OTP sẽ hết hạn sau một khoảng thời gian nhất định (ví dụ 5 phút)
+                // và so sánh OTP khi người dùng nhập lại
+                // Ví dụ: await saveOTP(existingUser.id, otpCode);
+            }
+
+            // Tạo và trả về token JWT
+            const token = generateToken(existingUser);
+
+            return res.status(200).json({ message: 'Login successful', token });
+
+        } catch (err) {
+            console.error(err);
+            // Đảm bảo chỉ trả về một phản hồi duy nhất
+            if (!res.headersSent) {
+                return res.status(500).json({ message: 'Error while logging in' });
+            }
+        }
+    },
+
+
+    async signUp(req, res) {
+        try {
+            const { phoneNumber, password, name, dOfB } = req.body;
+
+            // Kiểm tra user đã tồn tại
+            const existingUser = await db.User.findOne({ where: { phoneNumber: phoneNumber } });
+            if (existingUser) {
+                return res.status(400).json({ message: 'Số điện thoại đã được sử dụng' });
+            }
+
+            // Sinh mã OTP 6 chữ số
+            const otpCode = generateCode(6);
+
+            const pwdHashed = await hashPwd(password);
+            console.log(pwdHashed)
+
+            // Tạo user tạm với OTP (chưa xác thực)
+            const newUser = await db.User.create({
+                name: name,
+                phoneNumber: phoneNumber,
+                password: pwdHashed,
+                otpCode,
+                dOfB: new Date(dOfB)
+                // dùng để xác nhận sau khi verify OTP
+            });
+
+            // Gửi OTP qua SMS
+            const smsResult = await sendSMS({
+                phoneNumber,
+                message: `Here is your OTP for sign up: ${otpCode}`,
+            });
+
+            if (!smsResult) {
+                return res.status(500).json({ message: 'Không thể gửi OTP, vui lòng thử lại' });
+            }
+
+            return res.status(200).json({
+                message: 'Đã gửi mã OTP đến số điện thoại',
+                userId: newUser.id, // để dùng xác nhận sau
+            });
+        } catch (err) {
+            console.error('Sign up error:', err);
+            res.status(500).json({ message: 'Lỗi khi đăng ký người dùng' });
+        }
+    },
+
+
+    async checkOTP(req, res) {
+
+        try {
+            const { otp, phoneNumber } = req.body;
+
+            const user = db.User.findOne({
+                where: { phoneNumber: phoneNumber }
+            })
+
+            if (!user) {
+                res.status(400).json({ message: "User not found" })
+
+            }
+
+            if (!user.otpNumber === otp) {
+                res.status(400).json({ message: "Invalid otp" })
+            }
+
+            user.otpNumber = null;
+            user.isVerified = true;
+
+
+            res.status(200).json({ message: "Verified OTP success" })
+
+        } catch (err) {
+            console.log(err);
+            res.status(500).json({ message: 'Error verify OTP' });
+        }
+
+    },
+
+
+    async forgotPassword(req, res) {
+
+    },
+
+
+    async getProfile(req, res) {
+
+    }
+
+
+
+
+};
+
+
+
+module.exports = AuthController; 
