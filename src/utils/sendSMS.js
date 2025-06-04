@@ -19,8 +19,8 @@ async function sendSMS({ phoneNumber, message, senderID = 'flutter1' }) {
         PhoneNumber: phoneNumber,
         MessageAttributes: {
             'AWS.SNS.SMS.SenderID': {
-                DataType: 'String',
-                StringValue: senderID
+                'DataType': 'String',
+                'StringValue': 'String'
             }
         }
     };

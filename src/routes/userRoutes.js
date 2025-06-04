@@ -1,11 +1,14 @@
 const router = require('express').Router()
 
+const authMiddleware = require('../middlewares/authMiddleware')
+
 //Cần validate nữa 
 
-const AuthController = require('../controllers/authController');
+const AuthController = require('../controllers/userController');
 
-router.post('/auth/signup', AuthController.signUp);
-router.post('/auth/signin', AuthController.signIn);
-router.post('/auth/verify', AuthController.checkOTP);
+router.post('/user/password', authMiddleware, AuthController.changePassword)
+router.get('/user', authMiddleware, AuthController.getProfile)
+
+
 
 module.exports = router; 

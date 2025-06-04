@@ -9,14 +9,12 @@ const authMiddleware = async (req, res, next) => {
 
         if (token) {
             // Verify the token
-            const payload = jwt.verify(token, jwtSecret);
+            const payload = jwt.verify(token, secret);
 
             if (payload) {
                 req.user = {
-                    _id: payload._id,
-                    username: payload.username,
-                    email: payload.email,
-                    role: payload.role
+                    id: payload.id,
+                    phoneNumber: payload.phoneNumber,
                 };
                 return next(); // Proceed to the next middleware/route handler
             } else {
