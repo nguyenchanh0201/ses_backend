@@ -47,11 +47,19 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true,
     },
+    otpNumber : {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     isAutoReply: {
       type: DataTypes.BOOLEAN,
       allowNull: true,
       defaultValue: false,
     },
+    is2FA : {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    }
   }, {
     sequelize,
     modelName: 'User',
