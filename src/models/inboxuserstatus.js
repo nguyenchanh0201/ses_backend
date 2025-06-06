@@ -26,6 +26,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.UUID,
       allowNull: false,
     },
+    recipientType: {
+      type: DataTypes.ENUM('to', 'cc', 'bcc'),  
+      allowNull: false,
+    },
     isRead: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,

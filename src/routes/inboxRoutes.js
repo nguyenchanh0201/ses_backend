@@ -1,10 +1,16 @@
 const router = require('express').Router()
 const InboxController = require('../controllers/inboxController')
-const authMiddleware = require('../middlewares/authMiddleware')
+const authMiddleware = require('../middlewares/authMiddleware');
+const multer = require('multer');
 
+// Multer storage configuration (optional)
+const storage = multer.memoryStorage(); // Store files in memory (can be changed to diskStorage)
+const upload = multer({ storage: storage });
 
-router.get('/inbox', InboxController.getInboxes); //authMiddleware
-router.post('/inbox', InboxController.sendInbox); //authMiddleware
+router.get('/inbox', authMiddleware, InboxController.getInboxes); //authMiddleware
+router.post('/inbox', authMiddleware, InboxController.sendInbox); //authMiddleware
+
+router.post('/upload', authMiddleware, upload.single('file') , InboxController.uploadAttachment);
 
 
 

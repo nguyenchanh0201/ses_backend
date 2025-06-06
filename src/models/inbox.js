@@ -51,7 +51,7 @@ Inbox.init({
     type: DataTypes.JSONB,
     allowNull: true,
     defaultValue: [],
-  },
+  }
 }, {
   sequelize,
   modelName: 'Inbox',

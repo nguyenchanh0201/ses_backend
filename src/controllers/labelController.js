@@ -8,9 +8,9 @@ const LabelController = {
     async createLabel(req, res) {
         try {
             const userId = req.user.id ; 
-            const labelName = req.body ; 
+            const {labelName} = req.body ; 
 
-            if (Object.keys(labelName).length) {
+            if (!Object.keys(labelName).length) {
                 res.status(500).json({message : "Label can not be empty"})
 
             }
