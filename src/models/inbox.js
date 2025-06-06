@@ -5,7 +5,6 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
 
       Inbox.belongsTo(models.User, { as: 'FromUser', foreignKey: 'from' });
-      Inbox.belongsTo(models.User, { as: 'ToUser', foreignKey: 'to' });
 
 
       Inbox.hasMany(models.Inbox, { as: 'Replies', foreignKey: 'parentInboxId' });
@@ -13,11 +12,6 @@ module.exports = (sequelize, DataTypes) => {
 
       Inbox.hasMany(models.InboxUserStatus, { foreignKey: 'inboxId', as: 'status' });
 
-      Inbox.belongsToMany(models.UserLabel, {
-        through: models.InboxLabel,  // The junction table (InboxLabels)
-        foreignKey: 'inboxId',
-        as: 'labels',  // Alias for labels associated with this inbox
-      });
     
   }
 }
@@ -28,10 +22,6 @@ Inbox.init({
     defaultValue: DataTypes.UUIDV4,
   },
   from: {
-    type: DataTypes.UUID,
-    allowNull: false,
-  },
-  to: {
     type: DataTypes.UUID,
     allowNull: false,
   },
@@ -51,6 +41,15 @@ Inbox.init({
     type: DataTypes.JSONB,
     allowNull: true,
     defaultValue: [],
+  },
+  isSent: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false , 
+    allowNull: true,
+  },
+  draft: {
+    type : DataTypes.JSONB,
+    allowNull : true
   }
 }, {
   sequelize,
