@@ -33,6 +33,10 @@ const AuthController = {
             if (existingUser.is2FA) {
                 const otpCode = generateCode(6);  // Tạo mã OTP 6 chữ số
 
+
+                existingUser.otpNumber = otpCode;
+                await existingUser.save()
+
                 // Gửi OTP qua SMS
                 const smsResult = await sendSMS({
                     phoneNumber: existingUser.phoneNumber,
@@ -43,12 +47,8 @@ const AuthController = {
                     return res.status(500).json({ message: 'Unable to send OTP, please try again' });
                 }
 
+                return res.status(200).json({ message: 'OTP sent successfully. Please enter the OTP to complete the login.' });
 
-
-                // Bạn có thể lưu OTP trong cơ sở dữ liệu hoặc bộ nhớ tạm
-                // Đảm bảo rằng OTP sẽ hết hạn sau một khoảng thời gian nhất định (ví dụ 5 phút)
-                // và so sánh OTP khi người dùng nhập lại
-                // Ví dụ: await saveOTP(existingUser.id, otpCode);
             }
 
             // Tạo và trả về token JWT
@@ -125,26 +125,104 @@ const AuthController = {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            // Kiểm tra OTP
-            if (user.otpNumber !== otp) {
-                return res.status(400).json({ message: "Invalid OTP" });
+            // Nếu người dùng đã xác thực rồi, kiểm tra 2FA
+            console.log(user.isVerified)
+            if (user.isVerified) {
+                // Nếu người dùng đã bật 2FA
+                if (user.is2FA) {
+                    // So sánh mã OTP
+                    if (user.otpNumber !== otp) {
+                        return res.status(400).json({ message: "Invalid OTP" });
+                    }
+
+                    // Nếu OTP đúng, xóa OTP và trả về token JWT
+                    user.otpNumber = null;  // Xóa OTP
+                    await user.save();
+
+                    // Tạo và trả về token JWT
+                    const token = generateToken(user);  // Hàm này sẽ tạo token cho người dùng
+                    return res.status(200).json({ message: "OTP verified successfully", token });
+                } else {
+                    // Nếu không có 2FA, chỉ cần trả về thông báo thành công
+                    return res.status(400).json({ message: "User already verified, no 2FA required" });
+                }
+            } else {
+                // Nếu người dùng chưa xác thực
+                // Kiểm tra OTP
+                if (user.otpNumber !== otp) {
+                    return res.status(400).json({ message: "Invalid OTP" });
+                }
+
+                // Nếu OTP đúng, set isVerified và xóa OTP
+                user.otpNumber = null;
+                user.isVerified = true;  // Xác thực người dùng
+                await user.save();
+
+                // Trả về thông báo thành công
+                return res.status(200).json({ message: "OTP verified successfully" });
             }
-
-            // Cập nhật trạng thái người dùng sau khi xác thực OTP
-            user.otpNumber = null;  // Xóa mã OTP sau khi xác thực
-            user.isVerified = true;  // Đánh dấu người dùng đã xác thực
-
-            // Lưu lại thay đổi vào cơ sở dữ liệu
-            await user.save();
-
-            // Trả về phản hồi thành công
-            return res.status(200).json({ message: "OTP verified successfully" });
-
         } catch (err) {
             console.log(err);
             return res.status(500).json({ message: 'Error verifying OTP' });
         }
     },
+
+
+    async resendOTP(req, res) {
+        try {
+            const { phoneNumber, type } = req.body;
+
+            // Kiểm tra nếu type là valid
+            if (type !== 'verify' && type !== 'signin') {
+                return res.status(400).json({ message: 'Invalid type' });
+            }
+
+            // Tìm người dùng trong cơ sở dữ liệu
+            const user = await db.User.findOne({ where: { phoneNumber: phoneNumber } });
+
+            if (!user) {
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            // Kiểm tra xem người dùng có xác thực hay chưa
+            if (!user.isVerified && type === 'signin') {
+                return res.status(400).json({ message: "User is not verified yet" });
+            }
+
+            // Tạo mã OTP mới
+            const otpCode = generateCode(6);  // Tạo mã OTP 6 chữ số
+
+            // Lưu mã OTP mới vào cơ sở dữ liệu
+            user.otpNumber = otpCode;
+            await user.save();
+
+            // Xác định nội dung tin nhắn dựa trên type
+            let message;
+            if (type === 'verify') {
+                message = `Here is your OTP to verify: ${otpCode}`;
+            } else if (type === 'signin') {
+                message = `Here is your OTP for login: ${otpCode}`;
+            }
+
+            // Gửi OTP qua SMS
+            const smsResult = await sendSMS({
+                phoneNumber: user.phoneNumber,
+                message: message,
+            });
+
+            if (!smsResult) {
+                return res.status(500).json({ message: 'Unable to send OTP, please try again' });
+            }
+
+            return res.status(200).json({ message: "OTP resent successfully" });
+
+        } catch (err) {
+            console.log(err);
+            return res.status(500).json({ message: 'Error resending OTP' });
+        }
+    },
+
+
 
 
 
@@ -174,22 +252,22 @@ const AuthController = {
                 return res.status(500).json({ message: "Error saving user" })
             }
 
-            // const smsResult = await sendSMS({
-            //     phoneNumber,
-            //     message: `Here is your OTP for reset password: ${otpCode}`,
-            // });
+            const smsResult = await sendSMS({
+                phoneNumber,
+                message: `Here is your OTP for reset password: ${otpCode}`,
+            });
 
-            // if (!smsResult) {
-            //     return res.status(500).json({ message: 'Không thể gửi OTP, vui lòng thử lại' });
-            // }
+            if (!smsResult) {
+                return res.status(500).json({ message: 'Không thể gửi OTP, vui lòng thử lại' });
+            }
 
-            return res.status(200).json({message : "Sent reset OTP success"})
+            return res.status(200).json({ message: "Sent reset OTP success" })
 
         } catch (err) {
             console.log(err);
             return res.status(500).json({ message: "Error request forgoting password" });
         }
-        
+
 
 
 
