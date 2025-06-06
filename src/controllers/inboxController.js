@@ -7,98 +7,129 @@ const InboxController = {
 
     //Get all inboxes
     async getInboxes(req, res) {
-        try {
+    try {
+        const userId = req.user.id;
+        const { Op } = db.Sequelize;
 
-            const userId = req.user.id;
+        // --- 1. Xử lý các tham số đầu vào ---
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        const category = req.query.category || 'inbox';
+        
+        // Mặc định sắp xếp theo `createdAt` cho thư nhận và thư đã gửi
+        // Sắp xếp theo `updatedAt` cho thư nháp
+        const defaultSortBy = category.toLowerCase() === 'draft' ? 'updatedAt' : 'createdAt';
+        const sortBy = req.query.sortBy || defaultSortBy;
+        const sortOrder = (req.query.sortOrder || 'DESC').toUpperCase();
 
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 10;
-            const sortBy = req.query.sortBy || 'createdAt';
-            const sortOrder = (req.query.sortOrder || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        // --- 2. Xây dựng các điều kiện lọc động ---
+        const inboxWhere = {};    // Điều kiện cho bảng `Inbox`
+        const statusWhere = {};   // Điều kiện cho bảng `InboxUserStatus`
+        let isStatusRequired = false; // Cờ để quyết định dùng INNER JOIN hay LEFT JOIN
 
-            const offset = (page - 1) * limit;
-
-
-            const statusFields = ['isRead', 'isStarred', 'isSpam', 'isDeleted'];
-            const statusWhere = { userId };
-            let actualStatusParamsFound = false;
-
-            for (const definedField of statusFields) {
-                let queryValue;
-
-                if (req.query[definedField] !== undefined) {
-                    queryValue = req.query[definedField];
-                }
-
-                else if (req.query[definedField.toLowerCase()] !== undefined) {
-                    queryValue = req.query[definedField.toLowerCase()];
-                }
-
-                if (queryValue !== undefined) {
-                    const val = String(queryValue).toLowerCase();
-                    if (val === 'true' || val === 'false') {
-                        statusWhere[definedField] = (val === 'true');
-                        actualStatusParamsFound = true;
-                    }
-                }
-            }
-
-            const hasStatusFilter = actualStatusParamsFound;
-
-            let labelFilter = req.query.label;
-            if (labelFilter && typeof labelFilter === 'string') {
-                labelFilter = [labelFilter];
-            }
-
-            // --- Include Options for Sequelize ---
-            const includeStatus = {
-                model: db.InboxUserStatus,
-                as: 'status',
-                where: statusWhere,
-                required: hasStatusFilter,
-            };
-
-            const includeLabels = {
-                model: db.UserLabel,
-                as: 'labels',
-
-                required: !!labelFilter,
-            };
-
-            if (labelFilter) {
-                includeLabels.where = {
-                    labelName: labelFilter.length === 1
-                        ? labelFilter[0]
-                        : { [db.Sequelize.Op.in]: labelFilter }
-                };
-            }
-
-            // --- Database Query ---
-            const { count, rows } = await db.Inbox.findAndCountAll({
-                where: { to: userId },
-                include: [
-                    { model: db.User, as: 'FromUser' },
-                    { model: db.Inbox, as: 'Replies' },
-                    includeLabels,
-                    includeStatus,
-                ],
-                order: [[sortBy, sortOrder]],
-                limit,
-                offset,
-                distinct: true,
-            });
-
-            if (rows.length === 0) {
-                return res.status(404).json({ message: "No inbox messages found for this user with the specified criteria." });
-            }
-
-            res.status(200).json({ count, inbox: rows });
-
-        } catch (err) {
-            console.error('Error fetching inbox:', err);
-            res.status(500).json({ message: 'Error fetching inbox' });
+        // Xử lý lọc theo category hệ thống
+        switch (category.toLowerCase()) {
+            case 'sent':
+                inboxWhere.from = userId;
+                inboxWhere.isSent = true;
+                break;
+            case 'draft':
+                inboxWhere.from = userId;
+                inboxWhere.isSent = false;
+                break;
+            case 'starred':
+                statusWhere.userId = userId;
+                statusWhere.isStarred = true;
+                statusWhere.isDeleted = false;
+                isStatusRequired = true;
+                break;
+            case 'spam':
+                statusWhere.userId = userId;
+                statusWhere.isSpam = true;
+                isStatusRequired = true;
+                break;
+            case 'trash':
+                statusWhere.userId = userId;
+                statusWhere.isDeleted = true;
+                isStatusRequired = true;
+                break;
+            case 'inbox':
+            default:
+                statusWhere.userId = userId;
+                statusWhere.recipientType = { [Op.in]: ['to', 'cc', 'bcc'] };
+                statusWhere.isSpam = false;
+                statusWhere.isDeleted = false;
+                isStatusRequired = true;
+                break;
         }
-    },
+
+        // Xử lý các filter tùy chọn (isRead, isStarred...)
+        // Sẽ ghi đè lên thiết lập mặc định của category nếu được cung cấp
+        const statusFields = ['isRead', 'isStarred', 'isSpam', 'isDeleted'];
+        for (const field of statusFields) {
+            if (req.query[field] !== undefined) {
+                statusWhere[field] = req.query[field] === 'true';
+            }
+        }
+
+        // Xử lý lọc theo nhãn tùy chỉnh
+        let labelFilter = req.query.label;
+        if (labelFilter && typeof labelFilter === 'string') {
+            labelFilter = labelFilter.split(',').map(item => item.trim());
+        }
+
+        // --- 3. Xây dựng các đối tượng `include` ---
+        const includeLabels = {
+            model: db.UserLabel,
+            as: 'labels',
+            where: labelFilter ? { labelName: { [Op.in]: labelFilter } } : undefined,
+            required: !!labelFilter, // Chỉ INNER JOIN khi có lọc label
+            attributes: ['id', 'labelName']
+        };
+
+        const includeStatus = {
+            model: db.InboxUserStatus,
+            as: 'status',
+            where: statusWhere,
+            required: isStatusRequired,
+            include: [
+                { model: db.User, attributes: ['id', 'name', 'phoneNumber'] },
+                includeLabels
+            ]
+        };
+
+        // --- 4. Thực thi câu truy vấn duy nhất ---
+        const { count, rows } = await db.Inbox.findAndCountAll({
+            where: inboxWhere,
+            include: [
+                {
+                    model: db.User,
+                    as: 'FromUser',
+                    attributes: ['id', 'name', 'phoneNumber', 'imageUrl']
+                },
+                // { model: db.Inbox, as: 'Replies' }, // Bỏ comment nếu cần
+                includeStatus
+            ],
+            order: [[sortBy, sortOrder]],
+            limit,
+            offset,
+            distinct: true,
+        });
+
+        // --- 5. Trả về kết quả ---
+        res.status(200).json({
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
+            totalMessages: count,
+            inbox: rows
+        });
+
+    } catch (err) {
+        console.error('Error fetching inbox:', err);
+        res.status(500).json({ message: 'Error fetching inbox', error: err.message });
+    }
+},
 
 
     //sendInbox
@@ -107,162 +138,124 @@ const InboxController = {
             const fromUserId = req.user.id;
             const { phoneNumbers, cc, bcc, subject, body, attachments, parentInboxId, isSent } = req.body;
 
-            // Kiểm tra mảng phoneNumbers có chứa ít nhất một số điện thoại
+            // Giữ nguyên: Kiểm tra mảng phoneNumbers có chứa ít nhất một số điện thoại
             if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
                 return res.status(400).json({ message: 'phoneNumbers must be a non-empty array' });
             }
 
-            // Combine phone numbers from cc, bcc, and phoneNumbers (to)
-            const allPhoneNumbers = [...cc, ...bcc, ...phoneNumbers];
-            const uniquePhoneNumbers = Array.from(new Set(allPhoneNumbers)); // Deduplicate phone numbers
-
+            // Giữ nguyên: Lấy và map UUID của người dùng
+            const allPhoneNumbers = [...new Set([...phoneNumbers, ...cc, ...bcc])];
             const users = await db.User.findAll({
-                where: { phoneNumber: uniquePhoneNumbers }
+                where: { phoneNumber: allPhoneNumbers }
             });
-
-            // Map the users to their corresponding UUIDs
             const userMap = users.reduce((acc, user) => {
                 acc[user.phoneNumber] = user.id;
                 return acc;
             }, {});
+            const toUUIDs = phoneNumbers.map(phone => userMap[phone]).filter(Boolean);
+            const ccUUIDs = cc.map(phone => userMap[phone]).filter(Boolean);
+            const bccUUIDs = bcc.map(phone => userMap[phone]).filter(Boolean);
 
-            // Map each list to UUIDs
-            const ccUUIDs = cc.map(phone => userMap[phone] || null);
-            const bccUUIDs = bcc.map(phone => userMap[phone] || null);
-            const toUUIDs = phoneNumbers.map(phone => userMap[phone] || null);
-
-            // Check if any recipient UUIDs are missing
-            const missingUsers = [];
-            if (toUUIDs.some(id => !id)) missingUsers.push(...phoneNumbers);
-            if (ccUUIDs.some(id => !id)) missingUsers.push(...cc);
-            if (bccUUIDs.some(id => !id)) missingUsers.push(...bcc);
-
-            if (missingUsers.length > 0) {
+            // Giữ nguyên: Kiểm tra người dùng thiếu
+            const missingPhoneNumbers = allPhoneNumbers.filter(phone => !userMap[phone]);
+            if (missingPhoneNumbers.length > 0) {
                 return res.status(400).json({
                     message: 'Some users not found in the database',
-                    missingUsers
+                    missingUsers: missingPhoneNumbers
                 });
             }
 
-            // Prepare messages and errors
-            const sentMessages = [];
-            const errors = [];
-
-            const t = await db.sequelize.transaction(); // Start transaction
-
-            try {
-                // Lặp qua mảng phoneNumbers (to) để gửi message cho từng số điện thoại
-                for (const userId of toUUIDs) {
-                    try {
-                        // Create a new inbox message
-                        const newInbox = await db.Inbox.create({
-                            from: fromUserId,
-                            to: userId,
-                            parentInboxId: parentInboxId,
-                            body: body,
-                            subject: subject,
-                            attachments: attachments,
-                        }, { transaction: t });
-
-                        if (!newInbox) {
-                            errors.push({ userId, message: 'Failed creating inbox' });
-                            continue;
-                        }
-
-                        // If the message is sent, create InboxUserStatus entries for the sender and recipients
-                        if (isSent) {
-                            const createStatuses = [];
-
-                            // Create status for the sender
-                            createStatuses.push(
-                                db.InboxUserStatus.create({
-                                    inboxId: newInbox.id,
-                                    userId: fromUserId
-                                }, { transaction: t })
-                            );
-
-                            // Create status for the main recipient (to)
-                            createStatuses.push(
-                                db.InboxUserStatus.create({
-                                    inboxId: newInbox.id,
-                                    userId: userId,
-                                    recipientType: 'to'
-                                }, { transaction: t })
-                            );
-
-                            // Create status for cc recipients
-                            ccUUIDs.forEach(ccUserId => {
-                                if (ccUserId) {
-                                    createStatuses.push(
-                                        db.InboxUserStatus.create({
-                                            inboxId: newInbox.id,
-                                            userId: ccUserId,
-                                            recipientType: 'cc'
-                                        }, { transaction: t })
-                                    );
-                                }
-                            });
-
-                            // Create status for bcc recipients
-                            bccUUIDs.forEach(bccUserId => {
-                                if (bccUserId) {
-                                    createStatuses.push(
-                                        db.InboxUserStatus.create({
-                                            inboxId: newInbox.id,
-                                            userId: bccUserId,
-                                            recipientType: 'bcc'
-                                        }, { transaction: t })
-                                    );
-                                }
-                            });
-
-                            // Wait for all statuses to be created
-                            await Promise.all(createStatuses);
-                        } else {
-                            //Tạo draft mới ở đây
-
-                        }
-
-                        // Add the new inbox to the successful messages
-                        sentMessages.push(newInbox);
-
-                    } catch (err) {
-                        console.error(err);
-                        errors.push({ userId, message: `Error processing this user: ${err.message}` });
-                    }
-                }
-
-                // Commit the transaction if all inboxes are successfully created
-                await t.commit();
-
-                // If there were errors, return the error details
-                if (errors.length > 0) {
-                    return res.status(400).json({
-                        message: 'Some users not found or error occurred',
-                        errors
-                    });
-                }
-
-                // Return success response
-                res.status(201).json({
-                    message: 'Messages sent successfully',
-                    data: {
-                        success: sentMessages,
-                        errors: errors
+            // Giữ nguyên: Logic xử lý Draft
+            if (!isSent) {
+                const draft = await db.Inbox.create({
+                    from: fromUserId,
+                    parentInboxId: parentInboxId,
+                    body: body,
+                    subject: subject,
+                    attachments: attachments,
+                    draft: {
+                        to: toUUIDs,
+                        cc: ccUUIDs,
+                        bcc: bccUUIDs
                     }
                 });
+                if (!draft) {
+                    return res.status(400).json({ message: 'Failed creating draft' });
+                }
+                //Add status cho chính cái draft này, nhằm mục đích để xóa.
+                const statusDraft = await db.InboxUserStatus.create({
+                    inboxId: draft.id,
+                    userId : fromUserId,
+                    recipientType: null
 
-            } catch (err) {
-                // Rollback the transaction in case of error
-                await t.rollback();
-                console.error(err);
-                res.status(500).json({ message: 'Error sending inbox' });
+
+                    
+                });
+
+                if (!statusDraft) {
+                    return res.status(400).json({ message: 'Failed creating draft status' });
+                }
+
+                return res.status(200).json({ message: 'Draft saved successfully', data: draft });
+            } else {
+                // Logic gửi tin nhắn
+                const t = await db.sequelize.transaction();
+                try {
+                    const newInbox = await db.Inbox.create({
+                        from: fromUserId, // <-- Trường `from` là chìa khóa cho "Thư đã gửi"
+                        parentInboxId: parentInboxId,
+                        body: body,
+                        subject: subject,
+                        attachments: attachments,
+                        isSent: true
+                    }, { transaction: t });
+
+                    if (!newInbox) {
+                        throw new Error('Failed to create inbox message.');
+                    }
+
+                    // LOGIC TẠO STATUS MỚI - CHỈ DÀNH CHO NGƯỜI NHẬN
+                    const processedRecipients = new Map();
+
+                    const addRecipientStatus = (userId, type) => {
+                        if (userId && !processedRecipients.has(userId)) {
+                            processedRecipients.set(userId, {
+                                inboxId: newInbox.id,
+                                userId: userId,
+                                recipientType: type
+                            });
+                        }
+                    };
+
+                    // Áp dụng logic ưu tiên cho người nhận
+                    toUUIDs.forEach(userId => addRecipientStatus(userId, 'to'));
+                    ccUUIDs.forEach(userId => addRecipientStatus(userId, 'cc'));
+                    bccUUIDs.forEach(userId => addRecipientStatus(userId, 'bcc'));
+
+                    const statusesToCreate = Array.from(processedRecipients.values());
+
+                    // Chỉ tạo status nếu có người nhận
+                    if (statusesToCreate.length > 0) {
+                        await db.InboxUserStatus.bulkCreate(statusesToCreate, { transaction: t });
+                    }
+
+                    await t.commit();
+                    res.status(201).json({ message: 'Message sent successfully', data: newInbox });
+
+                } catch (err) {
+                    await t.rollback();
+                    console.error(err);
+                    res.status(500).json({ message: 'Error sending message', error: err.message });
+                }
             }
         } catch (err) {
             console.error(err);
             res.status(500).json({ message: 'Error processing the request' });
         }
     },
+
+
+    //Update, Delete Draft Inboxes
 
 
 
@@ -293,7 +286,6 @@ const InboxController = {
         }
     }
 
-    //Get sent inboxes
 
 }
 

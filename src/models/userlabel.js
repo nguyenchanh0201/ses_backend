@@ -8,11 +8,9 @@ module.exports = (sequelize, DataTypes) => {
       UserLabel.belongsTo(models.User, { foreignKey: 'userId' });
 
 
-
-      UserLabel.belongsToMany(models.Inbox, {
-        through: models.InboxLabel,
-        foreignKey: 'labelId',
-        as: 'inboxes',
+      UserLabel.belongsToMany(models.InboxUserStatus, {
+        through: 'InboxUserStatusLabel', // Tên bảng trung gian mới
+        foreignKey: 'userLabelId'
       });
 
     }
