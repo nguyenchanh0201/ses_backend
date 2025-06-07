@@ -68,7 +68,7 @@ const AuthController = {
 
     async signUp(req, res) {
         try {
-            const { phoneNumber, password, name, dOfB } = req.body;
+            const { phoneNumber, password, name, dOfB, gender } = req.body;
 
             // Kiểm tra user đã tồn tại
             const existingUser = await db.User.findOne({ where: { phoneNumber: phoneNumber } });
@@ -88,7 +88,8 @@ const AuthController = {
                 phoneNumber: phoneNumber,
                 password: pwdHashed,
                 otpNumber: otpCode,
-                dOfB: new Date(dOfB)
+                dOfB: new Date(dOfB),
+                gender : gender 
                 // dùng để xác nhận sau khi verify OTP
             });
 
@@ -142,7 +143,9 @@ const AuthController = {
                     // Tạo và trả về token JWT
                     const token = generateToken(user);  // Hàm này sẽ tạo token cho người dùng
                     return res.status(200).json({ message: "OTP verified successfully", token });
-                } else {
+                }
+                //else if check có request password không ? => gửi kèm token
+                 else {
                     // Nếu không có 2FA, chỉ cần trả về thông báo thành công
                     return res.status(400).json({ message: "User already verified, no 2FA required" });
                 }
@@ -243,10 +246,11 @@ const AuthController = {
             }
 
             //Tìm được
+            user.isVerified = false ;
             
-
+            const otpCode = generateCode(6)
             //Generate OTP code 
-            user.otpNumber = generateCode(6);
+            user.otpNumber = otpCode;
 
             const status = await user.save();
 
@@ -275,6 +279,32 @@ const AuthController = {
 
 
     },
+
+    async resetPassword(req, res) {
+        try {
+            const {phoneNumber , newPassword} = req.body ; 
+
+            const user = await db.User.findOne({
+                where : {
+                    phoneNumber : phoneNumber
+                }
+            });
+
+            if (!user) {
+                return res.status(404).json({message : "User not found"})
+            }
+
+            user.password = await hashPwd(newPassword);
+            await user.save();
+
+            return res.status(200).json({message : "Reset password success"});
+
+
+        } catch(err) {
+            console.log(err);
+            return res.status(500).json({message : "Error reset password"})
+        }
+    }
 
 };
 

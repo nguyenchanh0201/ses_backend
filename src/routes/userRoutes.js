@@ -8,7 +8,7 @@ const UserController = require('../controllers/userController');
 
 router.get('/user/settings', authMiddleware, UserController.getUserSettings) // Get user settings
 
-router.put('/user/settings/2fa', authMiddleware, UserController.updateSettings) 
+router.put('/user/settings', authMiddleware, UserController.updateSettings) 
 
 router.put('/user/settings/autoreply', authMiddleware, UserController.updateAutoReply)
 
