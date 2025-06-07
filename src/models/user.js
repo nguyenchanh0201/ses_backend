@@ -47,16 +47,24 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true,
     },
-    otpNumber : {
+    otpNumber: {
       type: DataTypes.STRING,
       allowNull: true
     },
-    isAutoReply: {
+    isAutoReplyEnabled: {
       type: DataTypes.BOOLEAN,
-      allowNull: true,
       defaultValue: false,
+      allowNull: false,
     },
-    is2FA : {
+    autoReplySubject: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    autoReplyBody: {
+      type: DataTypes.JSONB, // Dùng TEXT để lưu nội dung dài
+      allowNull: true,
+    },
+    is2FA: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     }

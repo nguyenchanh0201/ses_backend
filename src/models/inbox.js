@@ -50,6 +50,10 @@ Inbox.init({
   draft: {
     type : DataTypes.JSONB,
     allowNull : true
+  },
+  bodyText: {
+  type: DataTypes.TEXT,
+  allowNull: true,
   }
 }, {
   sequelize,

@@ -173,7 +173,7 @@ const AuthController = {
             const { phoneNumber, type } = req.body;
 
             // Kiểm tra nếu type là valid
-            if (type !== 'verify' && type !== 'signin') {
+            if (type !== 'verify' && type !== 'signin' && type != 'forgot') {
                 return res.status(400).json({ message: 'Invalid type' });
             }
 
@@ -202,6 +202,8 @@ const AuthController = {
                 message = `Here is your OTP to verify: ${otpCode}`;
             } else if (type === 'signin') {
                 message = `Here is your OTP for login: ${otpCode}`;
+            } else if (type === 'forgot') {
+                message = `Here is your OTP for reset password: ${otpCode}`;
             }
 
             // Gửi OTP qua SMS
@@ -241,7 +243,7 @@ const AuthController = {
             }
 
             //Tìm được
-            user.isVerified = false;
+            
 
             //Generate OTP code 
             user.otpNumber = generateCode(6);
