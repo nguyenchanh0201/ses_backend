@@ -1,135 +1,170 @@
 const db = require('../models');
+const { extractPlainTextFromQuill } = require('../utils/getPlainBody');
 const { uploadFileToS3 } = require('../utils/uploadFileS3');
 const { v4: uuidv4 } = require("uuid");
-
+const { Op } = db.Sequelize;
 
 const InboxController = {
 
-    //Get all inboxes
+
+
     async getInboxes(req, res) {
-    try {
-        const userId = req.user.id;
-        const { Op } = db.Sequelize;
+        try {
+            const userId = req.user.id;s
 
-        // --- 1. Xử lý các tham số đầu vào ---
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const offset = (page - 1) * limit;
-        const category = req.query.category || 'inbox';
-        
-        // Mặc định sắp xếp theo `createdAt` cho thư nhận và thư đã gửi
-        // Sắp xếp theo `updatedAt` cho thư nháp
-        const defaultSortBy = category.toLowerCase() === 'draft' ? 'updatedAt' : 'createdAt';
-        const sortBy = req.query.sortBy || defaultSortBy;
-        const sortOrder = (req.query.sortOrder || 'DESC').toUpperCase();
+            // --- 1. Xử lý tham số đầu vào ---
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 10;
+            const offset = (page - 1) * limit;
+            const category = req.query.category || 'inbox';
+            const defaultSortBy = category.toLowerCase() === 'draft' ? 'updatedAt' : 'createdAt';
+            const sortBy = req.query.sortBy || defaultSortBy;
+            const sortOrder = (req.query.sortOrder || 'DESC').toUpperCase();
 
-        // --- 2. Xây dựng các điều kiện lọc động ---
-        const inboxWhere = {};    // Điều kiện cho bảng `Inbox`
-        const statusWhere = {};   // Điều kiện cho bảng `InboxUserStatus`
-        let isStatusRequired = false; // Cờ để quyết định dùng INNER JOIN hay LEFT JOIN
+            const inboxWhere = {};
+            const statusWhere = {};
+            let isStatusRequired = false;
 
-        // Xử lý lọc theo category hệ thống
-        switch (category.toLowerCase()) {
-            case 'sent':
-                inboxWhere.from = userId;
-                inboxWhere.isSent = true;
-                break;
-            case 'draft':
-                inboxWhere.from = userId;
-                inboxWhere.isSent = false;
-                break;
-            case 'starred':
-                statusWhere.userId = userId;
-                statusWhere.isStarred = true;
-                statusWhere.isDeleted = false;
-                isStatusRequired = true;
-                break;
-            case 'spam':
-                statusWhere.userId = userId;
-                statusWhere.isSpam = true;
-                isStatusRequired = true;
-                break;
-            case 'trash':
-                statusWhere.userId = userId;
-                statusWhere.isDeleted = true;
-                isStatusRequired = true;
-                break;
-            case 'inbox':
-            default:
-                statusWhere.userId = userId;
-                statusWhere.recipientType = { [Op.in]: ['to', 'cc', 'bcc'] };
-                statusWhere.isSpam = false;
-                statusWhere.isDeleted = false;
-                isStatusRequired = true;
-                break;
-        }
-
-        // Xử lý các filter tùy chọn (isRead, isStarred...)
-        // Sẽ ghi đè lên thiết lập mặc định của category nếu được cung cấp
-        const statusFields = ['isRead', 'isStarred', 'isSpam', 'isDeleted'];
-        for (const field of statusFields) {
-            if (req.query[field] !== undefined) {
-                statusWhere[field] = req.query[field] === 'true';
+            // --- 2. Phân loại theo category ---
+            switch (category.toLowerCase()) {
+                case 'sent':
+                    inboxWhere.from = userId;
+                    inboxWhere.isSent = true;
+                    break;
+                case 'draft':
+                    inboxWhere.from = userId;
+                    inboxWhere.isSent = false;
+                    break;
+                case 'starred':
+                    statusWhere.userId = userId;
+                    statusWhere.isStarred = true;
+                    statusWhere.isDeleted = false;
+                    isStatusRequired = true;
+                    break;
+                case 'spam':
+                    statusWhere.userId = userId;
+                    statusWhere.isSpam = true;
+                    isStatusRequired = true;
+                    break;
+                case 'trash':
+                    statusWhere.userId = userId;
+                    statusWhere.isDeleted = true;
+                    isStatusRequired = true;
+                    break;
+                case 'inbox':
+                default:
+                    statusWhere.userId = userId;
+                    statusWhere.isSpam = false;
+                    statusWhere.isDeleted = false;
+                    inboxWhere.isSent = true;
+                    isStatusRequired = true;
+                    break;
             }
-        }
 
-        // Xử lý lọc theo nhãn tùy chỉnh
-        let labelFilter = req.query.label;
-        if (labelFilter && typeof labelFilter === 'string') {
-            labelFilter = labelFilter.split(',').map(item => item.trim());
-        }
+            // --- 3. Bổ sung filter nâng cao từ query ---
+            const statusFields = ['isRead', 'isStarred', 'isSpam', 'isDeleted'];
+            for (const field of statusFields) {
+                if (req.query[field] !== undefined) {
+                    statusWhere[field] = req.query[field] === 'true';
+                }
+            }
 
-        // --- 3. Xây dựng các đối tượng `include` ---
-        const includeLabels = {
-            model: db.UserLabel,
-            as: 'labels',
-            where: labelFilter ? { labelName: { [Op.in]: labelFilter } } : undefined,
-            required: !!labelFilter, // Chỉ INNER JOIN khi có lọc label
-            attributes: ['id', 'labelName']
-        };
+            // Lọc theo label
+            let labelFilter = req.query.label;
+            if (labelFilter && typeof labelFilter === 'string') {
+                labelFilter = labelFilter.split(',').map(item => item.trim());
+            }
 
-        const includeStatus = {
-            model: db.InboxUserStatus,
-            as: 'status',
-            where: statusWhere,
-            required: isStatusRequired,
-            include: [
-                { model: db.User, attributes: ['id', 'name', 'phoneNumber'] },
-                includeLabels
-            ]
-        };
+            // Lọc theo từ khóa (subject & bodyText)
+            const keywords = req.query.keywords?.trim();
+            if (keywords) {
+                const searchTerm = `%${keywords}%`;
+                inboxWhere[Op.or] = [
+                    { subject: { [Op.iLike]: searchTerm } },
+                    { bodyText: { [Op.iLike]: searchTerm } }
+                ];
+            }
 
-        // --- 4. Thực thi câu truy vấn duy nhất ---
-        const { count, rows } = await db.Inbox.findAndCountAll({
-            where: inboxWhere,
-            include: [
-                {
-                    model: db.User,
-                    as: 'FromUser',
-                    attributes: ['id', 'name', 'phoneNumber', 'imageUrl']
+            // 5. Lọc theo khoảng thời gian
+            const { startDate, endDate } = req.query;
+            if (isNaN(Date.parse(startDate))) return res.status(400).json({ message: 'Invalid startDate' });
+
+            if (startDate || endDate) {
+                inboxWhere.createdAt = {};
+                if (startDate) {
+                    inboxWhere.createdAt[Op.gte] = new Date(startDate);
+                }
+                if (endDate) {
+                    inboxWhere.createdAt[Op.lte] = new Date(endDate);
+                }
+            }
+
+            // --- 4. Tạo các include ---
+            const includeLabels = {
+                model: db.UserLabel,
+                as: 'labels',
+                where: labelFilter ? { labelName: { [Op.in]: labelFilter } } : undefined,
+                required: !!labelFilter,
+                attributes: ['id', 'labelName']
+            };
+
+            const includeStatus = {
+                model: db.InboxUserStatus,
+                as: 'status',
+                where: statusWhere,
+                required: isStatusRequired,
+                attributes: ['isRead', 'isStarred', 'isSpam', 'isDeleted'],
+                include: [includeLabels]
+            };
+
+            // --- 5. Truy vấn chính ---
+            const { count, rows } = await db.Inbox.findAndCountAll({
+                attributes: {
+                    exclude: ['attachments', 'body'],
+                    include: [
+                        [
+                            db.Sequelize.literal(`(
+                            SELECT jsonb_agg(elem->>'fileName') 
+                            FROM jsonb_array_elements("Inbox"."attachments") AS elem
+                        )`),
+                            'attachmentFileNames'
+                        ]
+                    ]
                 },
-                // { model: db.Inbox, as: 'Replies' }, // Bỏ comment nếu cần
-                includeStatus
-            ],
-            order: [[sortBy, sortOrder]],
-            limit,
-            offset,
-            distinct: true,
-        });
+                where: inboxWhere,
+                include: [
+                    {
+                        model: db.User,
+                        as: 'FromUser',
+                        attributes: ['id', 'name', 'imageUrl']
+                    },
+                    includeStatus
+                ],
+                order: [[sortBy, sortOrder]],
+                limit,
+                offset,
+                distinct: true
+            });
 
-        // --- 5. Trả về kết quả ---
-        res.status(200).json({
-            totalPages: Math.ceil(count / limit),
-            currentPage: page,
-            totalMessages: count,
-            inbox: rows
-        });
+            // --- 6. Trả kết quả ---
+            return res.status(200).json({
+                totalPages: Math.ceil(count / limit),
+                currentPage: page,
+                totalMessages: count,
+                inbox: rows
+            });
 
-    } catch (err) {
-        console.error('Error fetching inbox:', err);
-        res.status(500).json({ message: 'Error fetching inbox', error: err.message });
+        } catch (err) {
+            console.error('Error fetching inbox:', err);
+            return res.status(500).json({
+                message: 'Error fetching inbox',
+                error: err.message
+            });
+        }
     }
-},
+
+    ,
+
 
 
     //sendInbox
@@ -137,6 +172,7 @@ const InboxController = {
         try {
             const fromUserId = req.user.id;
             const { phoneNumbers, cc, bcc, subject, body, attachments, parentInboxId, isSent } = req.body;
+            const bodyText = extractPlainTextFromQuill(body)
 
             // Giữ nguyên: Kiểm tra mảng phoneNumbers có chứa ít nhất một số điện thoại
             if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
@@ -167,10 +203,13 @@ const InboxController = {
 
             // Giữ nguyên: Logic xử lý Draft
             if (!isSent) {
+
+
                 const draft = await db.Inbox.create({
                     from: fromUserId,
                     parentInboxId: parentInboxId,
                     body: body,
+                    bodyText: bodyText,
                     subject: subject,
                     attachments: attachments,
                     draft: {
@@ -185,11 +224,11 @@ const InboxController = {
                 //Add status cho chính cái draft này, nhằm mục đích để xóa.
                 const statusDraft = await db.InboxUserStatus.create({
                     inboxId: draft.id,
-                    userId : fromUserId,
+                    userId: fromUserId,
                     recipientType: null
 
 
-                    
+
                 });
 
                 if (!statusDraft) {
@@ -205,6 +244,7 @@ const InboxController = {
                         from: fromUserId, // <-- Trường `from` là chìa khóa cho "Thư đã gửi"
                         parentInboxId: parentInboxId,
                         body: body,
+                        bodyText: bodyText,
                         subject: subject,
                         attachments: attachments,
                         isSent: true
@@ -240,6 +280,8 @@ const InboxController = {
                     }
 
                     await t.commit();
+
+                    processAutoReplies(statusesToCreate, newInbox);
                     res.status(201).json({ message: 'Message sent successfully', data: newInbox });
 
                 } catch (err) {
@@ -284,9 +326,272 @@ const InboxController = {
             console.log(err);
             return res.status(500).json({ message: 'Error uploading attachment' });
         }
+    },
+
+
+    async getInboxById(req, res) {
+        try {
+            const { inboxId } = req.params;
+            const userId = req.user.id; // Lấy từ authMiddleware
+
+            // Tìm inbox VÀ bao gồm trạng thái của user đang đăng nhập
+            const inbox = await db.Inbox.findOne({
+                where: { id: inboxId },
+                include: [
+                    {
+                        model: db.InboxUserStatus,
+                        as: 'status', // Đặt một alias (bí danh) để dễ truy cập
+                        where: { userId: userId }, // **CHỈ LẤY STATUS CỦA USER NÀY**
+                        required: true, // **BIẾN THÀNH INNER JOIN -> KIỂM TRA QUYỀN HẠN**
+                        attributes: ['isRead', 'isStarred', 'isSpam', 'isDeleted'] // Chỉ lấy các trường cần thiết
+                    },
+                    // Bạn có thể include thêm các model khác ở đây nếu cần
+                    // Ví dụ: Lấy thông tin người gửi
+                    // {
+                    //   model: db.User,
+                    //   as: 'sender',
+                    //   attributes: ['id', 'email', 'fullName']
+                    // }
+                ]
+            });
+
+            // Nếu `required: true` và không tìm thấy status của user, `inbox` sẽ là null
+            if (!inbox) {
+                return res.status(404).json({ message: "Inbox not found or you don't have permission to view it." });
+            }
+
+            // Trả về kết quả đã được gộp lại
+            return res.status(200).json(inbox);
+
+        } catch (err) {
+            console.log(err);
+            return res.status(500).json({ message: 'Error getting inbox details' });
+        }
+    },
+
+
+    //Update inbox status 
+    async updateInboxStatus(req, res) {
+        try {
+            const { inboxId } = req.params;
+            const userId = req.user.id;
+
+            const updates = req.body;
+
+            const allowedUpdates = ['isRead', 'isStarred', 'isSpam', 'isDeleted'];
+
+            const validUpdates = {};
+            Object.keys(updates).forEach(key => {
+                if (allowedUpdates.includes(key)) {
+                    validUpdates[key] = updates[key];
+                }
+            });
+
+            if (Object.keys(validUpdates).length === 0) {
+                return res.status(400).json({ message: "No valid status fields provided for update." });
+            }
+
+            // 2. Tìm và cập nhật (hoặc tạo mới) bản ghi trạng thái
+            // Sử dụng `findOrCreate` hoặc `upsert` là lý tưởng nhất ở đây.
+            // `findOrCreate` sẽ tìm bản ghi với inboxId và userId, nếu không có, nó sẽ tạo mới.
+            const [statusRecord, created] = await db.InboxUserStatus.findOrCreate({
+                where: {
+                    inboxId: inboxId,
+                    userId: userId
+                },
+                defaults: validUpdates // Nếu tạo mới, sử dụng các giá trị này
+            });
+
+            // 3. Nếu bản ghi đã tồn tại (không phải mới tạo), hãy cập nhật nó
+            if (!created) {
+                // Nếu bản ghi đã có từ trước, tiến hành cập nhật các trường được gửi lên
+                await statusRecord.update(validUpdates);
+            }
+
+            // 4. Trả về kết quả
+            res.status(200).json({
+                message: 'Inbox status updated successfully.',
+                status: statusRecord
+            });
+
+        } catch (err) {
+            console.log(err);
+            return res.status(500).json({ message: 'Failed to update inbox status' })
+        }
+    },
+
+
+    // Thêm hàm này vào InboxController của bạn
+
+    async updateInbox(req, res) {
+        const t = await db.sequelize.transaction(); // Bắt đầu transaction ngay từ đầu
+        try {
+            const { inboxId } = req.params;
+            const fromUserId = req.user.id;
+            // Lấy tất cả dữ liệu từ body, bao gồm cả cờ isSent
+            const { phoneNumbers, cc, bcc, subject, body, attachments, isSent } = req.body;
+            const bodyText = extractPlainTextFromQuill(body)
+
+            // Tìm bản nháp tương ứng
+            const draft = await db.Inbox.findOne({ where: { id: inboxId } });
+
+            if (!draft) {
+                await t.rollback();
+                return res.status(404).json({ message: 'Draft not found.' });
+            }
+
+            // KIỂM TRA QUYỀN: Đảm bảo người dùng chỉ có thể sửa draft của chính mình
+            if (draft.from !== fromUserId) {
+                await t.rollback();
+                return res.status(403).json({ message: 'Forbidden: You cannot edit this draft.' });
+            }
+
+            // KIỂM TRA TRẠNG THÁI: Không thể gửi lại một email đã gửi
+            if (draft.isSent) {
+                await t.rollback();
+                return res.status(400).json({ message: 'This message has already been sent.' });
+            }
+
+            // --- BẮT ĐẦU PHÂN LUỒNG LOGIC ---
+
+            if (isSent === true) {
+                // LUỒNG 1: GỬI DRAFT ĐI
+
+                // Lấy và map UUID của người dùng (logic này giống hệt hàm sendInbox)
+                const allPhoneNumbers = [...new Set([...(phoneNumbers || []), ...(cc || []), ...(bcc || [])])];
+                const users = await db.User.findAll({ where: { phoneNumber: allPhoneNumbers } });
+                const userMap = users.reduce((acc, user) => { acc[user.phoneNumber] = user.id; return acc; }, {});
+                const toUUIDs = (phoneNumbers || []).map(phone => userMap[phone]).filter(Boolean);
+                const ccUUIDs = (cc || []).map(phone => userMap[phone]).filter(Boolean);
+                const bccUUIDs = (bcc || []).map(phone => userMap[phone]).filter(Boolean);
+
+                // Cập nhật bản nháp thành email đã gửi
+                await draft.update({
+                    subject: subject,
+                    body: body,
+                    bodyText: bodyText,
+                    attachments: attachments,
+                    isSent: true, // <-- Chuyển trạng thái
+                    draft: null,  // <-- Xóa thông tin người nhận nháp đi cho sạch sẽ
+                }, { transaction: t });
+
+                // Tạo status cho người nhận (logic này giống hệt hàm sendInbox)
+                const processedRecipients = new Map();
+                const addRecipientStatus = (userId, type) => {
+                    if (userId && !processedRecipients.has(userId)) {
+                        processedRecipients.set(userId, { inboxId: draft.id, userId: userId, recipientType: type });
+                    }
+                };
+                toUUIDs.forEach(userId => addRecipientStatus(userId, 'to'));
+                ccUUIDs.forEach(userId => addRecipientStatus(userId, 'cc'));
+                bccUUIDs.forEach(userId => addRecipientStatus(userId, 'bcc'));
+
+                const statusesToCreate = Array.from(processedRecipients.values());
+                if (statusesToCreate.length > 0) {
+                    await db.InboxUserStatus.bulkCreate(statusesToCreate, { transaction: t });
+                }
+
+                await t.commit();
+                processAutoReplies(statusesToCreate, draft);
+                res.status(200).json({ message: 'Draft sent successfully!', data: draft });
+
+            } else {
+                // LUỒNG 2: CHỈ CẬP NHẬT NỘI DUNG DRAFT (AUTO-SAVE)
+
+                // Logic map UUID người nhận cho draft (giống ở trên nhưng không cần transaction)
+                const allPhoneNumbers = [...new Set([...(phoneNumbers || []), ...(cc || []), ...(bcc || [])])];
+                const users = await db.User.findAll({ where: { phoneNumber: allPhoneNumbers } });
+                const userMap = users.reduce((acc, user) => { acc[user.phoneNumber] = user.id; return acc; }, {});
+                const toUUIDs = (phoneNumbers || []).map(phone => userMap[phone]).filter(Boolean);
+                const ccUUIDs = (cc || []).map(phone => userMap[phone]).filter(Boolean);
+                const bccUUIDs = (bcc || []).map(phone => userMap[phone]).filter(Boolean);
+
+                await draft.update({
+                    subject: subject,
+                    body: body,
+                    bodyText: bodyText,
+                    attachments: attachments,
+                    draft: { // Cập nhật lại thông tin người nhận trong draft
+                        to: toUUIDs,
+                        cc: ccUUIDs,
+                        bcc: bccUUIDs
+                    }
+                });
+                // Không cần commit/rollback vì không dùng transaction cho việc save draft đơn giản
+                res.status(200).json({ message: 'Draft updated successfully', data: draft });
+            }
+
+        } catch (err) {
+            // Nếu có lỗi ở bất kỳ đâu, rollback transaction
+            await t.rollback();
+            console.error(err);
+            res.status(500).json({ message: 'Error processing the request', error: err.message });
+        }
+    },
+
+}
+
+
+
+/**
+ * Xử lý việc gửi email trả lời tự động cho những người nhận đã bật tính năng này.
+ * Hàm này được thiết kế để chạy ngầm và không nên được `await`.
+ * @param {Array} createdStatuses - Mảng các object status vừa được tạo.
+ * @param {object} originalInbox - Object inbox gốc vừa được gửi.
+ */
+async function processAutoReplies(createdStatuses, originalInbox) {
+    try {
+        console.log('Bắt đầu xử lý trả lời tự động...');
+        for (const status of createdStatuses) {
+            const recipientId = status.userId;
+
+            // Lấy thông tin cấu hình của người nhận
+            const recipient = await db.User.findOne({
+                where: { id: recipientId },
+                attributes: ['id', 'isAutoReplyEnabled', 'autoReplySubject', 'autoReplyBody']
+            });
+
+            // Nếu người nhận có bật trả lời tự động và có nội dung trả lời
+            if (recipient && recipient.isAutoReplyEnabled && recipient.autoReplyBody) {
+
+                // QUAN TRỌNG: Ngăn chặn vòng lặp trả lời tự động vô hạn
+                // Nếu email gốc đã là một email trả lời tự động thì không trả lời nữa
+                if (originalInbox.subject.includes('[Auto-Reply]')) {
+                    console.log(`Bỏ qua auto-reply cho ${recipientId} vì email gốc đã là auto-reply.`);
+                    continue; // Chuyển sang người tiếp theo
+                }
+
+                console.log(`Phát hiện ${recipientId} có bật auto-reply. Đang tạo email trả lời...`);
+
+                const fromUserId = recipient.id; // Người gửi bây giờ là người nhận C
+                const toUserId = originalInbox.from;   // Người nhận bây giờ là người gửi gốc A
+                const bodyText = extractPlainTextFromQuill(recipient.autoReplyBody)
+                // Tạo một email mới (auto-reply)
+                // Lưu ý: Đây là một email hoàn toàn mới, không liên quan transaction cũ
+                const autoReplyInbox = await db.Inbox.create({
+                    from: fromUserId,
+                    parentInboxId: originalInbox.id, // Liên kết với email gốc
+                    subject: recipient.autoReplySubject || `Re: [Auto-Reply] ${originalInbox.subject}`,
+                    body: recipient.autoReplyBody,
+                    bodyText: bodyText,
+                    isSent: true
+                });
+
+                // Tạo status cho người nhận email auto-reply (là người gửi A)
+                await db.InboxUserStatus.create({
+                    inboxId: autoReplyInbox.id,
+                    userId: toUserId,
+                    recipientType: 'to'
+                });
+
+                console.log(`Đã gửi auto-reply từ ${fromUserId} đến ${toUserId}`);
+            }
+        }
+        console.log('Hoàn tất xử lý trả lời tự động.');
+    } catch (err) {
+        // Ghi lại lỗi nhưng không làm sập tiến trình chính
+        console.error('Lỗi trong quá trình xử lý trả lời tự động:', err);
     }
-
-
 }
 
 
