@@ -10,9 +10,9 @@ const InboxController = {
 
     async getInboxes(req, res) {
         try {
-            const userId = req.user.id;s
+            const userId = req.user.id;
 
-            // --- 1. Xử lý tham số đầu vào ---
+            // --- 1. Handle Input Parameters ---
             const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 10;
             const offset = (page - 1) * limit;
@@ -25,7 +25,7 @@ const InboxController = {
             const statusWhere = {};
             let isStatusRequired = false;
 
-            // --- 2. Phân loại theo category ---
+            // --- 2. Categorization Logic ---
             switch (category.toLowerCase()) {
                 case 'sent':
                     inboxWhere.from = userId;
@@ -51,6 +51,11 @@ const InboxController = {
                     statusWhere.isDeleted = true;
                     isStatusRequired = true;
                     break;
+                case 'important':
+                    statusWhere.userId = userId;
+                    statusWhere.isImportant = true;
+                    isStatusRequired = true;
+
                 case 'inbox':
                 default:
                     statusWhere.userId = userId;
@@ -61,33 +66,42 @@ const InboxController = {
                     break;
             }
 
-            // --- 3. Bổ sung filter nâng cao từ query ---
-            const statusFields = ['isRead', 'isStarred', 'isSpam', 'isDeleted'];
+            // --- 3. Advanced Filtering from Query ---
+            const statusFields = ['isRead', 'isStarred', 'isSpam', 'isDeleted', 'isImportant'];
             for (const field of statusFields) {
                 if (req.query[field] !== undefined) {
                     statusWhere[field] = req.query[field] === 'true';
                 }
             }
 
-            // Lọc theo label
+            // Filter by label
             let labelFilter = req.query.label;
             if (labelFilter && typeof labelFilter === 'string') {
                 labelFilter = labelFilter.split(',').map(item => item.trim());
             }
 
-            // Lọc theo từ khóa (subject & bodyText)
+            // **MODIFIED**: Filter by keywords (subject, bodyText, and sender's name)
             const keywords = req.query.keywords?.trim();
+            let isFromUserRequiredForKeywords = false; // Flag to track if FromUser is required due to keywords
             if (keywords) {
                 const searchTerm = `%${keywords}%`;
+                // Use Op.or to search in multiple fields across related tables.
+                // The '$FromUser.name$' syntax is crucial for querying an associated model's column.
                 inboxWhere[Op.or] = [
                     { subject: { [Op.iLike]: searchTerm } },
-                    { bodyText: { [Op.iLike]: searchTerm } }
+                    { bodyText: { [Op.iLike]: searchTerm } },
+                    { '$FromUser.name$': { [Op.iLike]: searchTerm } }
                 ];
+                isFromUserRequiredForKeywords = true; // Set flag to true
             }
-
-            // 5. Lọc theo khoảng thời gian
+            // Filter by date range
             const { startDate, endDate } = req.query;
-            if (isNaN(Date.parse(startDate))) return res.status(400).json({ message: 'Invalid startDate' });
+            if (startDate && isNaN(Date.parse(startDate))) {
+                return res.status(400).json({ message: 'Invalid startDate' });
+            }
+            if (endDate && isNaN(Date.parse(endDate))) {
+                return res.status(400).json({ message: 'Invalid endDate' });
+            }
 
             if (startDate || endDate) {
                 inboxWhere.createdAt = {};
@@ -99,7 +113,7 @@ const InboxController = {
                 }
             }
 
-            // --- 4. Tạo các include ---
+            // --- 4. Create Includes for Associations ---
             const includeLabels = {
                 model: db.UserLabel,
                 as: 'labels',
@@ -117,7 +131,16 @@ const InboxController = {
                 include: [includeLabels]
             };
 
-            // --- 5. Truy vấn chính ---
+            const includeFromUser = {
+                model: db.User,
+                as: 'FromUser',
+                attributes: ['id', 'name', 'imageUrl'],
+                // Set required to true if keywords are present and involve FromUser.name,
+                // otherwise, it remains false (default for LEFT JOIN).
+                required: isFromUserRequiredForKeywords,
+            };
+
+            // --- 5. Main Query ---
             const { count, rows } = await db.Inbox.findAndCountAll({
                 attributes: {
                     exclude: ['attachments', 'body'],
@@ -133,11 +156,7 @@ const InboxController = {
                 },
                 where: inboxWhere,
                 include: [
-                    {
-                        model: db.User,
-                        as: 'FromUser',
-                        attributes: ['id', 'name', 'imageUrl']
-                    },
+                    includeFromUser,
                     includeStatus
                 ],
                 order: [[sortBy, sortOrder]],
@@ -146,7 +165,7 @@ const InboxController = {
                 distinct: true
             });
 
-            // --- 6. Trả kết quả ---
+            // --- 6. Return Response ---
             return res.status(200).json({
                 totalPages: Math.ceil(count / limit),
                 currentPage: page,
@@ -378,7 +397,7 @@ const InboxController = {
 
             const updates = req.body;
 
-            const allowedUpdates = ['isRead', 'isStarred', 'isSpam', 'isDeleted'];
+            const allowedUpdates = ['isRead', 'isStarred', 'isSpam', 'isDeleted','isImportant'];
 
             const validUpdates = {};
             Object.keys(updates).forEach(key => {

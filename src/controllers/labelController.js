@@ -15,18 +15,26 @@ const LabelController = {
 
             }
 
+            const existingLabel = await db.UserLabel.findOne({
+                where : {labelName : labelName, userId : userId}
+            })
+
+            if (existingLabel) {
+                return res.status(400).json({message : "Label name existed!"})
+            }
 
 
-            const newLabel = db.UserLabel.create({
+
+            const newLabel = await db.UserLabel.create({
                 userId : userId ,
                 labelName : labelName
             })
 
             if (!newLabel) {
-                res.status(500).json({message : "Error adding label"});
+                return res.status(500).json({message : "Error adding label"});
             }
 
-            res.status(200).json({message : "Label created successfully"});
+            return res.status(200).json({message : "Label created successfully", data : newLabel});
 
 
         } catch(err) {
@@ -135,10 +143,10 @@ const LabelController = {
             }
             
             // If your ORM supports returning the updated record(s) and you've enabled it:
-            // const updatedLabel = affectedRows ? affectedRows[0] : null;
+            const updatedLabel = affectedRows ? affectedRows[0] : null;
             // res.status(200).json({ message: "Label renamed successfully", label: updatedLabel });
 
-            res.status(200).json({ message: "Label renamed successfully." });
+            res.status(200).json({ message: "Label renamed successfully.", data : updatedLabel });
 
 
         } catch (err) {
