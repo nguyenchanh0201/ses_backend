@@ -351,30 +351,41 @@ const InboxController = {
     async getInboxById(req, res) {
         try {
             const { inboxId } = req.params;
-            const userId = req.user.id; // Lấy từ authMiddleware
+            const userId = req.user.id;
 
             // Tìm inbox VÀ bao gồm trạng thái của user đang đăng nhập
             const inbox = await db.Inbox.findOne({
                 where: { id: inboxId },
+                attributes: {
+                    exclude: ['attachments', 'body'], // Loại trừ trường gốc 'attachments' và 'body' (nếu bạn muốn bodyText)
+                    include: [
+                        [
+                            db.Sequelize.literal(`(
+                                SELECT jsonb_agg(elem->>'fileName') 
+                                FROM jsonb_array_elements("Inbox"."attachments") AS elem
+                            )`),
+                            'attachmentFileNames' // Thêm trường mới 'attachmentFileNames'
+                        ],
+                        'bodyText'
+                    ]
+                },
                 include: [
                     {
                         model: db.InboxUserStatus,
-                        as: 'status', // Đặt một alias (bí danh) để dễ truy cập
-                        where: { userId: userId }, // **CHỈ LẤY STATUS CỦA USER NÀY**
-                        required: true, // **BIẾN THÀNH INNER JOIN -> KIỂM TRA QUYỀN HẠN**
-                        attributes: ['isRead', 'isStarred', 'isSpam', 'isDeleted'] // Chỉ lấy các trường cần thiết
+                        as: 'status',
+                        where: { userId: userId },
+                        required: true, // INNER JOIN: đảm bảo chỉ lấy inbox mà user này có status
+                        attributes: ['isRead', 'isStarred', 'isSpam', 'isDeleted', 'isImportant'] // Đảm bảo lấy isImportant
                     },
-                    // Bạn có thể include thêm các model khác ở đây nếu cần
-                    // Ví dụ: Lấy thông tin người gửi
-                    // {
-                    //   model: db.User,
-                    //   as: 'sender',
-                    //   attributes: ['id', 'email', 'fullName']
-                    // }
+                    {
+                        model: db.User,
+                        as: 'FromUser', // ALIAS NÀY PHẢI KHỚP VỚI 'FromUser' TRONG FLUTTER MODEL CỦA BẠN
+                        attributes: ['id', 'name', 'imageUrl'], // THUỘC TÍNH NÀY PHẢI KHỚP TRONG FLUTTER MODEL
+                    }
                 ]
             });
 
-            // Nếu `required: true` và không tìm thấy status của user, `inbox` sẽ là null
+
             if (!inbox) {
                 return res.status(404).json({ message: "Inbox not found or you don't have permission to view it." });
             }
@@ -383,8 +394,8 @@ const InboxController = {
             return res.status(200).json(inbox);
 
         } catch (err) {
-            console.log(err);
-            return res.status(500).json({ message: 'Error getting inbox details' });
+            console.error('Error getting inbox details:', err); // Sử dụng console.error cho lỗi
+            return res.status(500).json({ message: 'Error getting inbox details', error: err.message });
         }
     },
 
@@ -397,7 +408,7 @@ const InboxController = {
 
             const updates = req.body;
 
-            const allowedUpdates = ['isRead', 'isStarred', 'isSpam', 'isDeleted','isImportant'];
+            const allowedUpdates = ['isRead', 'isStarred', 'isSpam', 'isDeleted', 'isImportant'];
 
             const validUpdates = {};
             Object.keys(updates).forEach(key => {
