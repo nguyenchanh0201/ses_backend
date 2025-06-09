@@ -161,8 +161,8 @@ const AuthController = {
                 user.isVerified = true;  // Xác thực người dùng
                 await user.save();
 
-                // Trả về thông báo thành công
-                return res.status(200).json({ message: "OTP verified successfully" });
+                const token = generateToken(user);  // Hàm này sẽ tạo token cho người dùng
+                return res.status(200).json({ message: "OTP verified successfully", token });
             }
         } catch (err) {
             console.log(err);
