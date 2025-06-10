@@ -10,27 +10,214 @@ const InboxController = {
 
 
 
+    // async getInboxes(req, res) {
+    //     try {
+    //         const userId = req.user.id;
+    //         const page = parseInt(req.query.page) || 1;
+    //         const limit = parseInt(req.query.limit) || 10;
+    //         const offset = (page - 1) * limit;
+    //         const category = req.query.category || 'inbox';
+
+    //         let count, rows;
+
+    //         // Các thuộc tính và include chung
+    //         const commonAttributes = { exclude: ['attachments', 'body', 'draft'] };
+    //         const commonIncludes = [{
+    //             model: db.User,
+    //             as: 'FromUser',
+    //             attributes: ['id', 'name', 'imageUrl', 'phoneNumber'],
+    //         }];
+
+    //         if (category === 'inbox') {
+    //             // --- LOGIC GOM NHÓM HỘI THOẠI BẰNG ĐỆ QUY (ĐÃ SỬA LỖI) ---
+            //     const latestMessagesQuery = `
+            //     WITH RECURSIVE ConversationRoot AS (
+            //         -- Phần neo: những tin nhắn là gốc của chính nó (không có parent)
+            //         SELECT id, id as "rootId"
+            //         FROM "${db.Inbox.tableName}"
+            //         WHERE "parentInboxId" IS NULL
+                    
+            //         UNION ALL
+                    
+            //         -- Phần đệ quy: tìm các tin nhắn con và gán "rootId" của cha cho nó
+            //         SELECT i.id, r."rootId"
+            //         FROM "${db.Inbox.tableName}" i
+            //         INNER JOIN ConversationRoot r ON i."parentInboxId" = r.id
+            //     ),
+            //     RankedMessages AS (
+            //         SELECT
+            //             i.id,
+            //             -- Gom nhóm theo "rootId" vừa tìm được ở trên
+            //             ROW_NUMBER() OVER(PARTITION BY cr."rootId" ORDER BY i."createdAt" DESC) as rn
+            //         FROM "${db.Inbox.tableName}" i
+            //         INNER JOIN "${db.InboxUserStatus.tableName}" s ON i.id = s."inboxId"
+            //         INNER JOIN ConversationRoot cr ON i.id = cr.id -- Join để lấy rootId
+            //         WHERE
+            //             s."userId" = :userId
+            //             AND s."recipientType" IS NOT NULL
+            //             AND s."isDeleted" = false
+            //             AND s."isSpam" = false
+            //             AND i."isSent" = true
+            //     )
+            //     SELECT id FROM RankedMessages WHERE rn = 1;
+            // `;
+
+    //             const latestMessages = await db.sequelize.query(latestMessagesQuery, {
+    //                 replacements: { userId },
+    //                 type: QueryTypes.SELECT,
+    //             });
+
+    //             const latestMessageIds = latestMessages.map(msg => msg.id);
+
+    //             if (latestMessageIds.length === 0) {
+    //                 return res.status(200).json({ totalPages: 0, currentPage: 1, totalMessages: 0, inbox: [] });
+    //             }
+
+    //             ({ count, rows } = await db.Inbox.findAndCountAll({
+    //                 where: { id: { [Op.in]: latestMessageIds } },
+    //                 order: [['createdAt', 'DESC']],
+    //                 limit,
+    //                 offset,
+    //                 distinct: true,
+    //                 attributes: commonAttributes,
+    //                 include: [
+    //                     ...commonIncludes,
+    //                     {
+    //                         model: db.InboxUserStatus,
+    //                         as: 'status',
+    //                         where: { userId },
+    //                         required: true,
+    //                     },
+    //                 ],
+    //             }));
+    //         } else {
+    //             // --- LOGIC CŨ CHO CÁC DANH MỤC KHÁC ---
+    //             const inboxWhere = {};
+    //             const statusWhere = { userId };
+
+    //             switch (category) {
+    //                 case 'sent':
+    //                     statusWhere.recipientType = null;
+    //                     statusWhere.isDeleted = false;
+    //                     inboxWhere.isSent = true;
+    //                     break;
+    //                 case 'draft':
+    //                     inboxWhere.isSent = false;
+    //                     statusWhere.recipientType = null;
+    //                     break;
+    //                 case 'starred':
+    //                     statusWhere.isStarred = true;
+    //                     statusWhere.isDeleted = false;
+    //                     break;
+    //                 case 'spam':
+    //                     statusWhere.isSpam = true;
+    //                     break;
+    //                 case 'trash':
+    //                     statusWhere.isDeleted = true;
+    //                     break;
+    //                 case 'important':
+    //                     statusWhere.isImportant = true;
+    //                     statusWhere.isDeleted = false;
+    //                     break;
+    //             }
+
+    //             ({ count, rows } = await db.Inbox.findAndCountAll({
+    //                 where: inboxWhere,
+    //                 order: [['createdAt', 'DESC']],
+    //                 limit,
+    //                 offset,
+    //                 distinct: true,
+    //                 attributes: commonAttributes,
+    //                 include: [
+    //                     ...commonIncludes,
+    //                     {
+    //                         model: db.InboxUserStatus,
+    //                         as: 'status',
+    //                         where: statusWhere,
+    //                         required: true,
+    //                     },
+    //                 ],
+    //             }));
+    //         }
+
+    //         return res.status(200).json({
+    //             totalPages: Math.ceil(count / limit),
+    //             currentPage: page,
+    //             totalMessages: count,
+    //             inbox: rows,
+    //         });
+
+    //     } catch (err) {
+    //         console.error('Error fetching inboxes:', err);
+    //         return res.status(500).json({ message: 'Error fetching inboxes', error: err.message });
+    //     }
+    // }
+
+    // ,
+
+
     async getInboxes(req, res) {
-        try {
-            const userId = req.user.id;
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 10;
-            const offset = (page - 1) * limit;
-            const category = req.query.category || 'inbox';
+    try {
+        const userId = req.user.id;
 
-            let count, rows;
+        // --- BƯỚC 1: XỬ LÝ CÁC THAM SỐ ĐẦU VÀO ---
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        const category = req.query.category?.toLowerCase() || 'inbox';
+        const labelName = req.query.label; // Hỗ trợ lọc theo tên nhãn
+        const keywords = req.query.keywords?.trim();
+        const { startDate, endDate, isRead, isStarred, isImportant } = req.query;
+        
+        const defaultSortBy = category === 'draft' ? 'updatedAt' : 'createdAt';
+        const sortBy = req.query.sortBy || defaultSortBy;
+        const sortOrder = (req.query.sortOrder || 'DESC').toUpperCase();
 
-            // Các thuộc tính và include chung
-            const commonAttributes = { exclude: ['attachments', 'body', 'draft'] };
-            const commonIncludes = [{
-                model: db.User,
-                as: 'FromUser',
-                attributes: ['id', 'name', 'imageUrl', 'phoneNumber'],
-            }];
+        let count, rows;
 
-            if (category === 'inbox') {
-                // --- LOGIC GOM NHÓM HỘI THOẠI BẰNG ĐỆ QUY (ĐÃ SỬA LỖI) ---
-                const latestMessagesQuery = `
+        // --- BƯỚC 2: XỬ LÝ LOGIC DỰA TRÊN VIỆC LỌC THEO NHÃN HAY THEO CATEGORY ---
+
+        // Xây dựng các object điều kiện và include
+        const inboxWhere = {};
+        const statusWhere = { userId };
+        let isStatusRequired = false;
+
+        const labelInclude = {
+            model: db.UserLabel,
+            as: 'labels',
+            attributes: ['id', 'labelName'],
+            through: { attributes: [] },
+        };
+
+        // Nếu có lọc theo tên nhãn, ta sẽ thêm điều kiện vào include
+        if (labelName) {
+            labelInclude.where = { labelName: { [Op.iLike]: labelName } };
+            labelInclude.required = true; // INNER JOIN để chỉ lấy tin nhắn CÓ nhãn này
+            isStatusRequired = true; // Buộc phải join bảng status để join được bảng label
+        }
+        
+        // Cấu hình include cho status, lồng cả include cho label vào trong
+        const statusInclude = {
+            model: db.InboxUserStatus,
+            as: 'status',
+            where: statusWhere,
+            include: [labelInclude]
+        };
+
+        const fromUserInclude = {
+            model: db.User,
+            as: 'FromUser',
+            attributes: ['id', 'name', 'imageUrl'],
+        };
+        
+        // Luồng chính: Nếu là category 'inbox', áp dụng gom nhóm hội thoại.
+        // Nếu lọc theo nhãn hoặc keyword, chúng ta sẽ tìm trên danh sách phẳng.
+        if (category === 'inbox' && !labelName && !keywords) {
+            
+            // --- LOGIC GOM NHÓM HỘI THOẠI (Chỉ áp dụng cho category 'inbox' mặc định) ---
+
+            // 2A. Dùng SQL đệ quy để tìm ID của các tin nhắn mới nhất trong mỗi chuỗi hội thoại
+            const latestMessagesQuery = `
                 WITH RECURSIVE ConversationRoot AS (
                     -- Phần neo: những tin nhắn là gốc của chính nó (không có parent)
                     SELECT id, id as "rootId"
@@ -60,100 +247,105 @@ const InboxController = {
                         AND i."isSent" = true
                 )
                 SELECT id FROM RankedMessages WHERE rn = 1;
-            `;
+            `; // Câu lệnh SQL đệ quy dài của bạn ở đây
+            const latestMessages = await db.sequelize.query(latestMessagesQuery, {
+                replacements: { userId },
+                type: QueryTypes.SELECT,
+            });
+            const latestMessageIds = latestMessages.map(msg => msg.id);
 
-                const latestMessages = await db.sequelize.query(latestMessagesQuery, {
-                    replacements: { userId },
-                    type: QueryTypes.SELECT,
-                });
-
-                const latestMessageIds = latestMessages.map(msg => msg.id);
-
-                if (latestMessageIds.length === 0) {
-                    return res.status(200).json({ totalPages: 0, currentPage: 1, totalMessages: 0, inbox: [] });
-                }
-
-                ({ count, rows } = await db.Inbox.findAndCountAll({
-                    where: { id: { [Op.in]: latestMessageIds } },
-                    order: [['createdAt', 'DESC']],
-                    limit,
-                    offset,
-                    distinct: true,
-                    attributes: commonAttributes,
-                    include: [
-                        ...commonIncludes,
-                        {
-                            model: db.InboxUserStatus,
-                            as: 'status',
-                            where: { userId },
-                            required: true,
-                        },
-                    ],
-                }));
-            } else {
-                // --- LOGIC CŨ CHO CÁC DANH MỤC KHÁC ---
-                const inboxWhere = {};
-                const statusWhere = { userId };
-
-                switch (category) {
-                    case 'sent':
-                        statusWhere.recipientType = null;
-                        statusWhere.isDeleted = false;
-                        inboxWhere.isSent = true;
-                        break;
-                    case 'draft':
-                        inboxWhere.isSent = false;
-                        statusWhere.recipientType = null;
-                        break;
-                    case 'starred':
-                        statusWhere.isStarred = true;
-                        statusWhere.isDeleted = false;
-                        break;
-                    case 'spam':
-                        statusWhere.isSpam = true;
-                        break;
-                    case 'trash':
-                        statusWhere.isDeleted = true;
-                        break;
-                    case 'important':
-                        statusWhere.isImportant = true;
-                        statusWhere.isDeleted = false;
-                        break;
-                }
-
-                ({ count, rows } = await db.Inbox.findAndCountAll({
-                    where: inboxWhere,
-                    order: [['createdAt', 'DESC']],
-                    limit,
-                    offset,
-                    distinct: true,
-                    attributes: commonAttributes,
-                    include: [
-                        ...commonIncludes,
-                        {
-                            model: db.InboxUserStatus,
-                            as: 'status',
-                            where: statusWhere,
-                            required: true,
-                        },
-                    ],
-                }));
+            if (latestMessageIds.length === 0) {
+                return res.status(200).json({ totalPages: 0, currentPage: 1, totalMessages: 0, inbox: [] });
             }
 
-            return res.status(200).json({
-                totalPages: Math.ceil(count / limit),
-                currentPage: page,
-                totalMessages: count,
-                inbox: rows,
-            });
+            // Lọc chính là các ID đã tìm được
+            inboxWhere.id = { [Op.in]: latestMessageIds };
+            statusInclude.required = true; // Luôn cần status cho inbox
 
-        } catch (err) {
-            console.error('Error fetching inboxes:', err);
-            return res.status(500).json({ message: 'Error fetching inboxes', error: err.message });
+        } else {
+            // --- LOGIC LỌC PHẲNG (Áp dụng cho các category khác, hoặc khi có bộ lọc label/keywords) ---
+
+            // 2B. Xây dựng điều kiện lọc dựa trên category
+            statusInclude.where.isDeleted = false; // Mặc định không lấy tin trong thùng rác
+            
+            switch (category) {
+                case 'sent':
+                    inboxWhere.from = userId;
+                    inboxWhere.isSent = true;
+                    statusInclude.required = false; // Thư gửi đi có thể không có status cho chính mình
+                    break;
+                case 'draft':
+                    inboxWhere.from = userId;
+                    inboxWhere.isSent = false;
+                    statusInclude.required = false;
+                    break;
+                case 'starred':
+                    statusInclude.where.isStarred = true;
+                    isStatusRequired = true;
+                    break;
+                // ... các case khác như 'trash', 'spam', 'important'
+                default: // 'inbox'
+                    statusInclude.where.isSpam = false;
+                    inboxWhere.isSent = true;
+                    isStatusRequired = true;
+                    break;
+            }
         }
-    }
 
-    ,
+        // --- BƯỚC 3: ÁP DỤNG CÁC BỘ LỌC NÂNG CAO (keywords, date, status) ---
+        
+        if (keywords) {
+            const searchTerm = `%${keywords}%`;
+            inboxWhere[Op.or] = [
+                { subject: { [Op.iLike]: searchTerm } },
+                { bodyText: { [Op.iLike]: searchTerm } },
+                { '$FromUser.name$': { [Op.iLike]: searchTerm } }
+            ];
+            fromUserInclude.required = true; // INNER JOIN khi tìm theo tên người gửi
+        }
+
+        if (isRead !== undefined) statusWhere.isRead = (isRead === 'true');
+        if (isStarred !== undefined) statusWhere.isStarred = (isStarred === 'true');
+        if (isImportant !== undefined) statusWhere.isImportant = (isImportant === 'true');
+
+        if (startDate || endDate) {
+            inboxWhere.createdAt = {};
+            if (startDate) inboxWhere.createdAt[Op.gte] = new Date(startDate);
+            if (endDate) inboxWhere.createdAt[Op.lte] = new Date(endDate);
+        }
+
+        // Cập nhật lại required cho statusInclude sau khi đã xử lý tất cả logic
+        statusInclude.required = isStatusRequired || !!labelName;
+
+
+        // --- BƯỚC 4: THỰC THI TRUY VẤN CUỐI CÙNG ---
+
+        ({ count, rows } = await db.Inbox.findAndCountAll({
+            where: inboxWhere,
+            include: [fromUserInclude, statusInclude],
+            order: [[sortBy, sortOrder]],
+            limit,
+            offset,
+            distinct: true,
+            // SỬA LẠI: Trả về object attachments đầy đủ để nhất quán với API getById
+            attributes: {
+                exclude: ['body'], 
+            },
+        }));
+
+        // --- BƯỚC 5: TRẢ VỀ KẾT QUẢ ---
+        return res.status(200).json({
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
+            totalMessages: count,
+            inbox: rows,
+        });
+
+    } catch (err) {
+        console.error('Error fetching inboxes:', err);
+        return res.status(500).json({ message: 'Error fetching inboxes', error: err.message });
+    }
+},
 
 
 
@@ -400,7 +592,7 @@ const InboxController = {
                 },
                 order: [['createdAt', 'ASC']], // Luôn sắp xếp để hiển thị đúng thứ tự
                 attributes: {
-                    exclude: ['attachments', 'body'],
+                    exclude: [, 'body'],
                     include: [
                         [
                             db.Sequelize.literal(`(SELECT jsonb_agg(elem->>'fileName') FROM jsonb_array_elements("Inbox"."attachments") AS elem)`),
