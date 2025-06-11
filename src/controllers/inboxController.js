@@ -443,7 +443,7 @@ const InboxController = {
                 },
                 order: [['createdAt', 'ASC']], // Luôn sắp xếp để hiển thị đúng thứ tự
                 attributes: {
-                    exclude: [, 'body'],
+                    
                     include: [
                         [
                             db.Sequelize.literal(`(SELECT jsonb_agg(elem->>'fileName') FROM jsonb_array_elements("Inbox"."attachments") AS elem)`),
