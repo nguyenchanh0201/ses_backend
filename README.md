@@ -57,6 +57,7 @@ Below is a list of features supported by this backend, grouped by functionality.
 
 ## Installation & Setup
 
+### Run local
 To run this project on your local machine, follow these steps:
 
 1.  **Clone the repository**
@@ -95,6 +96,26 @@ To run this project on your local machine, follow these steps:
 
 ---
 
+### Run with Docker
+
+To run this project using Docker, make sure you have Docker installed and running on your machine. You can use the Dockerfile or create your own.
+
+1.  **Build the Docker Image**
+    
+    From the project's root directory, run the following command to build the Docker image. Replace `email-service-backend` with your desired image name.
+    
+    ```bash
+    docker build -t email-service-backend .
+    ```
+    
+2.  **Run the Docker Container**
+    
+    After the image is built, run the following command to start a container from it. This command maps port `3001` on your local machine to port `3001` inside the container and passes the environment variables from your `.env` file.
+    
+    ```bash
+    docker run -d -p 3001:3001 --env-file ./.env --name email-service-container email-service-backend
+    ```
+    
 ## Environment Variables (.env)
 
 Below is the list of environment variables required for the project to work:
